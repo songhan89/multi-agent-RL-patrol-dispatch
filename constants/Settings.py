@@ -65,8 +65,8 @@ EPS_DECAY = 1000
 DISPATCH_ACTIONS = {
         'respond': 0,
         'continue': 1,
-        'nearest_new_job': 2,
-        'nearest_old_job': 3,
+        # 'nearest_new_job': 2,
+        # 'nearest_old_job': 3,
         # 'best_new_job': 4,
         # 'best_old_job': 5
 }

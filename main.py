@@ -1,6 +1,7 @@
 import os
 import sys
 import random
+import gym
 import ray
 import glob
 import argparse
@@ -9,12 +10,19 @@ import json
 import pickle
 import numpy as np
 from datetime import datetime
-from ray.rllib.examples.env.multi_agent import MultiAgentCartPole
-
+from ray.rllib.policy.policy import PolicySpec
 from envs.dynamic_patrol import PatrolEnv
 from util.ScheduleUtil import get_global_Q_j
 from data.ScenarioGenerator import generate_scenario
+from constants.Settings import NUM_DISPATCH_ACTIONS, T
 from ray.rllib.agents import ppo, qmix
+from gym.spaces import Box, Tuple, Discrete, MultiDiscrete
+
+
+def policy_mapping_fn(agent_id, episode, worker, **kwargs):
+    # agent0 -> main0
+    # agent1 -> main1
+    return f"main{agent_id[-1]}"
 
 def main():
     logging.basicConfig(level=logging.INFO,
@@ -76,37 +84,57 @@ def main():
         #agent ids
         agents_ids.extend(list(initial_schedules[sector_id][0].keys()))
 
+    num_agents = len(agents_ids)
+    T_max = len(T) - 1
+    num_subsectors = len(subsectors_map['subsector_2_idx'].keys())
+
     for idx, agent_id in enumerate(agents_ids):
         agents_map['agentid_2_idx'][agent_id] = idx
         agents_map['idx_2_agentid'][idx] = agent_id
+
+    obs_space = Tuple((
+                    Box(low=-1, high=num_subsectors,
+                        shape=(num_agents, T_max + 1),
+                        dtype=np.int32),
+                    # time step
+                    Box(low=0, high=T_max, shape=(1,), dtype=np.int32),
+                    # incident occur at which sector
+                    Box(low=-1, high=num_subsectors, shape=(1,), dtype=np.int32),
+                    # responded or not
+                    Box(low=0, high=1, shape=(1,), dtype=np.int32),
+                    # agent travels status (0 for patrol, 1 for travel)
+                    Box(low=0, high=1, shape=(num_agents,), dtype=np.int32),
+                    # agent's travel destination (set to src dest if not travelling)
+                    Box(low=-1, high=num_subsectors, shape=(num_agents,),
+                        dtype=np.int32),
+                    # timestep to arrive at the dest if agent was travelling
+                    Box(low=-1, high=T_max, shape=(num_agents,), dtype=np.int32),
+            ))
+    action_space = gym.spaces.Discrete(NUM_DISPATCH_ACTIONS)
 
     ray.init()
     trainer = ppo.PPOTrainer(env=PatrolEnv, config={
         "env_config": {'travel_matrix': time_matrix,
                       'agent_ids': agents_ids,
-                      'T_max': 72,
+                      'T_max': T_max,
                       'initial_schedules': initial_schedules,
                       'subsectors_map': subsectors_map,
                       'agents_map': agents_map,
                       'scenarios': training_scenarios
                       },  # config to pass to env class
-        # "multiagent": {
-        #     "policies": None,
-        #     "policy_mapping_fn": None,
-        # }
+        "multiagent": {
+            "policies": {
+                "main4": PolicySpec(observation_space=obs_space,
+                                    action_space=action_space),
+                "main2": PolicySpec(observation_space=obs_space,
+                                    action_space=action_space),
+                "main5": PolicySpec(observation_space=obs_space,
+                                     action_space=action_space)
+            },
+            "policy_mapping_fn": policy_mapping_fn
+        }
     })
 
-    # env = PatrolEnv( {'travel_matrix': time_matrix,
-    #                   'agent_ids': agents_ids,
-    #                   'T_max': 72,
-    #                   'initial_schedules': initial_schedules,
-    #                   'subsectors_map': subsectors_map,
-    #                   'agents_map': agents_map,
-    #                   'scenarios': training_scenarios
-    #                   })
-    #
-    # env.reset()
-    # print (env.step({'kml_4': 0, 'kml_2': 1, 'kml_15': 0}))
     while True:
         print(trainer.train())
 

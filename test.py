@@ -18,6 +18,8 @@ from envs.dynamic_patrol import PatrolEnv
 from util.ScheduleUtil import get_global_Q_j
 from data.ScenarioGenerator import generate_scenario
 from ray.rllib.agents import ppo, qmix
+from gym.spaces import Box, Tuple, Discrete, MultiDiscrete
+
 
 def main():
     logging.basicConfig(level=logging.INFO,
@@ -96,10 +98,25 @@ def main():
 
     ray.init(local_mode=True)
 
-    obs_space = gym.spaces.Tuple((
-                    gym.spaces.Box(low=0, high=10, shape=(3, 72), dtype=np.int32),
-                    gym.spaces.Box(low=0, high=10, shape=(3, 5), dtype=np.float),
-                ))
+    num_agents = len(agents_ids)
+    T_length = 72
+    num_subsectors = len(subsectors_map['subsector_2_idx'].keys())
+
+    obs_space = Tuple((
+                        Box(low=0, high=num_subsectors + 1,
+                          shape=(num_agents, T_length),
+                          dtype=np.int32),
+                        #time step
+                        Box(low=0, high=T_length, shape=(1,), dtype=np.int32),
+                        #incident occur at which sector
+                        Box(low=0, high=num_subsectors + 2, shape=(1,), dtype=np.int32),
+                        #responded or not
+                        Box(low=0, high=1, shape=(1,), dtype=np.int32),
+                        #agent travels status (0 for patrol, 1 for travel)
+                        Box(low=0, high=1, shape=(num_agents,), dtype=np.int32),
+                        #timestep to arrive at the dest if agent was travelling
+                        Box(low=0, high=T_length, shape=(num_agents,), dtype=np.int32),
+            ))
     action_space = gym.spaces.Discrete(2)
 
     trainer = ppo.PPOTrainer(env=PatrolEnv, config={
