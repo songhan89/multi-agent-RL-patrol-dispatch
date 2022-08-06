@@ -63,9 +63,15 @@ def main():
             idx += 1
 
     for i, src in enumerate(subsectors_map['subsector_2_idx'].keys()):
+        shortest_dist = 1e7
         time_matrix[src] = {}
         for j, dest in enumerate(subsectors_map['subsector_2_idx'].keys()):
-            time_matrix[src][dest] = global_time_matrix[src][dest]
+            #convert to time unit
+            if src == dest:
+                dist_unit = 0
+            else:
+                dist_unit = max(1, global_time_matrix[src][dest] // 10)
+            time_matrix[src][dest] = dist_unit
 
     Q_j = get_global_Q_j(sectors)
 
@@ -97,7 +103,7 @@ def main():
                         shape=(num_agents, T_max + 1),
                         dtype=np.int32),
                     # time step
-                    Box(low=0, high=T_max, shape=(1,), dtype=np.int32),
+                    Box(low=0, high=T_max + 1, shape=(1,), dtype=np.int32),
                     # incident occur at which sector
                     Box(low=-1, high=num_subsectors, shape=(1,), dtype=np.int32),
                     # responded or not
@@ -108,7 +114,7 @@ def main():
                     Box(low=-1, high=num_subsectors, shape=(num_agents,),
                         dtype=np.int32),
                     # timestep to arrive at the dest if agent was travelling
-                    Box(low=-1, high=T_max, shape=(num_agents,), dtype=np.int32),
+                    Box(low=-1, high=T_max + 1, shape=(num_agents,), dtype=np.int32),
             ))
     action_space = gym.spaces.Discrete(NUM_DISPATCH_ACTIONS)
 
@@ -120,7 +126,7 @@ def main():
                       'initial_schedules': initial_schedules,
                       'subsectors_map': subsectors_map,
                       'agents_map': agents_map,
-                      'scenarios': training_scenarios
+                      'scenarios': training_scenarios,
                       },  # config to pass to env class
         "multiagent": {
             "policies": {

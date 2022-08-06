@@ -1,5 +1,5 @@
-def get_distance():
-    pass
+import numpy as np
+from scipy.spatial.distance import hamming
 
 def empty_timetable(time_table, t_incident):
     """
@@ -16,4 +16,16 @@ def empty_timetable(time_table, t_incident):
 
     return time_table
 
+def hamming_distance(schedule1, schedule2):
+    """
+    :param schedule1:
+    :param schedule2:
+    :return: total distance as a percentage (average)
+    """
 
+    total_dist = 0
+
+    for agent_idx in range(len(schedule1)):
+        total_dist += hamming(schedule1[agent_idx], schedule2[agent_idx])
+
+    return total_dist / len(schedule1)

@@ -1,3 +1,5 @@
+from copy import deepcopy
+
 class Schedule(object):
     """
 
@@ -9,9 +11,10 @@ class Schedule(object):
         self._subsector_map = subsector_map
         self._agents_map = agents_map
         self._state = {}
+        self._state['initial_schedule'] = [[-1] * (self._T_max + 1) for _ in range(self._num_agents)]
         self._state['responded'] = [0]
         self._state['schedule'] = [[-1] * (self._T_max + 1) for _ in range(self._num_agents)]
-        self._state['incident_time'] = [0]
+        self._state['time_step'] = [0]
         self._state['incident_loc'] = [0]
         self._state['agent_travel_status'] = [0] * num_agents
         self._state['agent_travel_dest']  = [-1] * num_agents
@@ -27,19 +30,19 @@ class Schedule(object):
 
     def get_state(self, key):
 
-        return self._state[key]
+        return deepcopy(self._state[key])
 
     def get_observation(self):
 
-        return (
+        return deepcopy((
             self._state['schedule'],
-            self._state['incident_time'],
+            self._state['time_step'],
             self._state['incident_loc'],
             self._state['responded'],
             self._state['agent_travel_status'],
             self._state['agent_travel_dest'],
             self._state['agent_arrival_time']
-                )
+                ))
 
     def to_string(self):
 
@@ -50,14 +53,19 @@ class Schedule(object):
             print("================================================================")
             time_table = [self._subsector_map['idx_2_subsector'].get(subsector_idx, -1) for subsector_idx
                           in self._state['schedule'][agent_idx]]
+            dest_idx = self._state['agent_travel_dest'][agent_idx]
+            dest_id = self._subsector_map['idx_2_subsector'].get(dest_idx, -1)
             print (time_table)
             incident_loc_id = self._subsector_map['idx_2_subsector'].get(self._state['incident_loc'][0], -1)
-            print (f"Incident id: {incident_loc_id}, time: {self._state['incident_time'][0]}")
+            print (f"Incident id: {incident_loc_id}, timestep: {self._state['time_step'][0]}")
             print (f"Responded: {self._state['responded'][0]}")
             print (f"Travel Status: {self._state['agent_travel_status'][agent_idx]}")
-            print(f"Travel Destination: {self._state['agent_travel_dest'][agent_idx]}")
+            print(f"Travel Destination:{dest_id}, Index: {self._state['agent_travel_dest'][agent_idx]}")
             print(f"Travel Arrival Time: {self._state['agent_arrival_time'][agent_idx]}")
             print("")
+
+    def get_reward(self):
+        pass
 
 
 
