@@ -26,4 +26,7 @@ by dispatch rules
 * We may need to explore dispatch rules benefit vs `free learning` approach
 
 
-30 Jul - run a simple single action 
+20 Aug - 
+* Fix the reward . Currently it learns towards lower reward
+* Implement best reward action spaces
+* Code review of existing implementation [V]
