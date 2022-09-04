@@ -25,8 +25,23 @@ How should we create the environment ?
 by dispatch rules
 * We may need to explore dispatch rules benefit vs `free learning` approach
 
-
 20 Aug - 
-* Fix the reward . Currently it learns towards lower reward
-* Implement best reward action spaces
-* Code review of existing implementation [V]
+* Fix the reward . Currently it learns towards lower reward [done]
+* Implement best reward action spaces [done]
+* Code review of existing implementation [done]
+
+28 Aug
+Learning:
+* It seems that the reward structure is better when it is set to zero at every step, and return the state reward
+  at the end of the episode
+
+High priority
+* Clean up training code - standardise training iteration and episode
+* How to resume training ?
+
+Medium
+* Setup benchmark with myopic 
+* Setup q-mix learning
+
+Low priority
+* Understand the NN architecture size

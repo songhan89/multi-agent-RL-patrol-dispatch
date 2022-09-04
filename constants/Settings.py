@@ -63,7 +63,11 @@ EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 1000
 #weight for hamming distance penalty
-THETA = 0.1
+THETA = 0.5 # #
+#weight for respond reward
+OMEGA = 100 #100 worked for EFL
+#penalty for invalid action
+PHI = 0
 
 DISPATCH_ACTIONS = {
         'respond': 0, #respond to the incident

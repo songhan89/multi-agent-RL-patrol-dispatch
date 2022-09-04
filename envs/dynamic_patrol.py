@@ -16,10 +16,14 @@ class PatrolEnv(MultiAgentEnv):
     def __init__(self, config: EnvContext):
 
         self._schedule_attr = ['time', 'incident', 'patrol_penalty', 'patrol_util']
+        #.csv filename
+        self._save_fpath = config['prefix_fpath']
         #set of agent ids
         self._agent_ids = set(config['agent_ids'])
-        #list of incident scenarios
-        self._scenarios = config['scenarios']
+        # list of incident scenarios of training scenario
+        self._scenarios_list = config['scenarios']
+        # initialise with the first option
+        self._scenarios = self._scenarios_list[0]
         #mapping for subsector and agent ids <-> index
         self._subsector_map = config['subsectors_map']
         self._agents_map = config['agents_map']
@@ -37,11 +41,23 @@ class PatrolEnv(MultiAgentEnv):
         self._spaces_in_preferred_format = True
         self._timestep = 0
         self._responded = 0
+        self._response_utility = 0
+        #convert str keys to int keys
+        #special handler for resume training since keys are loaded as str
+        self._subsector_map['subsector_2_idx'] = {int(k):v for k,v in self._subsector_map['subsector_2_idx'].items()}
+        self._subsector_map['idx_2_subsector'] = {int(k):v for k,v in self._subsector_map['idx_2_subsector'].items()}
+        self._agents_map['idx_2_agentid'] = {int(k):v for k,v in self._agents_map['idx_2_agentid'].items()}
+        self._travel_matrix = {int(k):v for k,v in self._travel_matrix.items()}
+        for key, val in self._travel_matrix.items():
+            self._travel_matrix[key] = {int(k): v for k, v in self._travel_matrix[key].items()}
+
         #Initialize a Schedule object to keep track of the state
         self._state = Schedule(self._T_max, self._num_agents, self._subsector_map, self._agents_map)
         self._all_jobs = set(self._travel_matrix.keys())
         self._incidents = self._create_scenarios()
         self._Q_j = config['Q_j']
+        # special handler for resume training since keys are loaded as str
+        self._Q_j = {int(k): v for k, v in self._Q_j.items()}
         self._Q_j_idx = {}
         for k, v in self._Q_j.items():
             subsector_idx = self._subsector_map['subsector_2_idx'][k]
@@ -50,6 +66,7 @@ class PatrolEnv(MultiAgentEnv):
         state_dict, action_dict = {}, {}
         for agent in self._agent_ids:
             state_dict[agent] = Tuple((
+                                        #schedule
                                         Box(low=-1, high=self._num_subsectors,
                                           shape=(self._num_agents, self._T_max + 1),
                                           dtype=np.int32),
@@ -82,8 +99,8 @@ class PatrolEnv(MultiAgentEnv):
         self._state = Schedule(self._T_max, self._num_agents, self._subsector_map, self._agents_map)
         initial_schedule = self._state.get_state('initial_schedule')
         res_schedule = self._state.get_state('schedule')
-        first_scenario = self._scenarios[0]
         self._responded = 0
+        self._response_utility = 0
 
         #reset action history
         self._action_history = {}
@@ -94,7 +111,11 @@ class PatrolEnv(MultiAgentEnv):
 
         #randomly select an initial schedule
         #TODO: Remove set fixed seed
-        selected_idx = 0 #random.randint(0, self._num_initial_schedules - 1)
+        selected_idx = random.randint(0, self._num_initial_schedules - 1)
+        #initialise scenarios
+        self._scenarios = self._scenarios_list[selected_idx]
+        first_scenario = self._scenarios[0]
+        self._incidents = self._create_scenarios()
 
         for sector in self._initial_schedules.keys():
             for agent in self._initial_schedules[sector][selected_idx].keys():
@@ -133,7 +154,7 @@ class PatrolEnv(MultiAgentEnv):
                                self._subsector_map['subsector_2_idx'].keys(),
                                self._Q_j_idx)
 
-        print (f"Initial obj val: {obj_val}")
+        # print (f"Initial obj val: {obj_val}")
         # print("Reset and Initial State--------------------")
         # print(res_travel, res_agent_dest, res_agent_arr)
         # self._state.to_string()
@@ -154,7 +175,11 @@ class PatrolEnv(MultiAgentEnv):
         # self._state.to_string()
         # print ("-------------------------------------------")
 
-        for agent_id, action in action_dict.items():
+        #shuffle the ordering of agents taking action
+        agent_action_list = list(action_dict.items())
+        random.shuffle(agent_action_list)
+
+        for agent_id, action in agent_action_list:
             agent_idx = self._agents_map['agentid_2_idx'][agent_id]
 
             #if respond/dispatch to incident
@@ -205,23 +230,33 @@ class PatrolEnv(MultiAgentEnv):
         done["__all__"] = len(self.dones) == len(self._agent_ids)
 
         if done["__all__"]:
-            print ("--------End of Episode-------")
+            # print ("--------End of Episode-------")
             obj_val = get_objective_value_MA(self._state.get_state('schedule'),
                                          self._subsector_map['subsector_2_idx'].keys(),
                                          self._Q_j_idx)
-            self._state.to_string()
-            print(f"End of episode obj val: {obj_val}")
-            print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}")
-            print(f"Action space distribution: {self._action_history}")
+            # self._state.to_string()
+            # print(f"End of episode obj val: {obj_val}")
+            # print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}")
+            # print(f"Action space distribution: {self._action_history}")
             hamming_dist = hamming_distance(self._state.get_state('initial_schedule'),
                                             self._state.get_state('schedule'))
-            print(f"Hamming distance from initial schedule: {hamming_dist}")
-            print("------------------------------\n")
+            # print(f"Hamming distance from initial schedule: {hamming_dist}")
+            # print("------------------------------\n")
 
             #get reward at the end of episode if reward policy selected is `end_of_episode`
             if self._reward_policy == 'end_of_episode':
                 for agent_id in self._agent_ids:
-                    rew[agent_id] = obj_val
+                    rew[agent_id] = obj_val - THETA * hamming_dist
+
+            info[agent_id] = {
+                'hamming_dist': hamming_dist,
+                'perc_incidents_responded': 1.0 * self._responded / len(self._scenarios),
+                'final_schedule_obj_val': obj_val,
+                'initial_schedule_obj_val': get_objective_value_MA(self._state.get_state('initial_schedule'),
+                               self._subsector_map['subsector_2_idx'].keys(),
+                               self._Q_j_idx),
+                #'save_fpath': self._save_fpath
+                }
 
         return obs, rew, done, info
 
@@ -251,11 +286,11 @@ class PatrolEnv(MultiAgentEnv):
         # if agent's status was travelling or there was no incident
         # switch the action to `continue` patrolling
         if agent_travel_status[agent_idx] == 1 or incident_loc_idx == -1 or t == self._T_max:
-            return self._action_continue(agent_id, is_invalid_action=False)
+            return self._action_continue(agent_id, is_invalid_action=True)
 
         # if the incident has been responded by another agent already, switch action to `continue`
         if respond_state[0] == 1:
-            return self._action_continue(agent_id, is_invalid_action=False)
+            return self._action_continue(agent_id, is_invalid_action=True)
 
         #if agent was patrolling, get the agent to respond to the incident
         if agent_travel_status[agent_idx] == 0:
@@ -287,7 +322,11 @@ class PatrolEnv(MultiAgentEnv):
         objective_val_after = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
                                         self._Q_j_idx)
         penalty_val = hamming_distance(initial_state, schedule_state)
-        reward = (1 + response_utility_fn(response_time)) * objective_val_after - obj_val_before - THETA * penalty_val
+        reward = response_utility_fn(response_time) / len(self._incidents.keys()) + \
+                 objective_val_after - obj_val_before - THETA * penalty_val
+        if self._reward_policy == 'end_of_episode':
+            self._response_utility += response_utility_fn(response_time)
+            reward = OMEGA * response_utility_fn(response_time) / len(self._incidents.keys())
 
         #increase action count
         self._action_history[agent_id][0] += 1
@@ -338,12 +377,12 @@ class PatrolEnv(MultiAgentEnv):
         penalty_val = hamming_distance(initial_state, schedule_state)
 
         if is_invalid_action:
-            reward = -1e7
+            reward = PHI
         else:
-            reward = objective_val_after - obj_val_before - THETA * penalty_val
-
-        if self._reward_policy == 'end_of_episode':
-            reward = 0
+            if self._reward_policy == 'end_of_episode':
+                reward = 0
+            else:
+                reward = objective_val_after - obj_val_before - THETA * penalty_val
 
         #increase action count
         self._action_history[agent_id][1] += 1
@@ -364,7 +403,7 @@ class PatrolEnv(MultiAgentEnv):
 
         #if agent's status was travelling, continue to travel
         if travel_status_state[agent_idx] == 1 or t == self._T_max:
-            return self._action_continue(agent_id, is_invalid_action=False)
+            return self._action_continue(agent_id, is_invalid_action=True)
 
         initial_state = self._state.get_state('initial_schedule')
         arrival_time_state = self._state.get_state('agent_arrival_time')
@@ -464,7 +503,7 @@ class PatrolEnv(MultiAgentEnv):
 
         #if agent was travelling or we have reached the end of timeline
         if travel_status_state[agent_idx] == 1 or t == self._T_max:
-            return self._action_continue(agent_id, is_invalid_action=False)
+            return self._action_continue(agent_id, is_invalid_action=True)
 
         agent_src_loc = self._subsector_map['idx_2_subsector'][travel_dest_state[agent_idx]]
 
@@ -533,7 +572,7 @@ class PatrolEnv(MultiAgentEnv):
 
         #if agent's status was travelling, continue to travel
         if travel_status_state[agent_idx] == 1 or t == self._T_max:
-            return self._action_continue(agent_id, is_invalid_action=False)
+            return self._action_continue(agent_id, is_invalid_action=True)
 
         initial_state = self._state.get_state('initial_schedule')
         arrival_time_state = self._state.get_state('agent_arrival_time')
