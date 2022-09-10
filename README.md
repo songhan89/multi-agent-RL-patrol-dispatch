@@ -36,12 +36,16 @@ Learning:
   at the end of the episode
 
 High priority
-* Clean up training code - standardise training iteration and episode
-* How to resume training ?
+* Clean up training code - standardise training iteration and episode [Not done]
+* How to resume training ? [Not done]
+* Fix edge cases
 
 Medium
-* Setup benchmark with myopic 
+* Setup benchmark with myopic [Done]
 * Setup q-mix learning
+* Set learning action constraint
 
 Low priority
 * Understand the NN architecture size
+
+

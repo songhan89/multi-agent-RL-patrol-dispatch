@@ -414,6 +414,11 @@ class PatrolEnv(MultiAgentEnv):
         try:
             agent_cur_loc = self._subsector_map['idx_2_subsector'][agent_cur_loc_idx]
         except:
+            print(self._timestep)
+            print(schedule_state[agent_idx])
+            print (agent_cur_loc_idx)
+            print (self._subsector_map['idx_2_subsector'])
+            print ("*****************************************")
             raise ValueError
 
         obj_val_before = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
@@ -584,6 +589,11 @@ class PatrolEnv(MultiAgentEnv):
         try:
             agent_cur_loc = self._subsector_map['idx_2_subsector'][agent_cur_loc_idx]
         except:
+            print(self._timestep)
+            print(schedule_state[agent_idx])
+            print (agent_cur_loc_idx)
+            print (self._subsector_map['idx_2_subsector'])
+            print ("*****************************************")
             raise ValueError
 
         obj_val_before = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),

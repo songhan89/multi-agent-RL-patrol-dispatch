@@ -33,7 +33,7 @@ def policy_mapping_fn(agent_id, episode, worker, **kwargs):
     # agent0 -> main0
     # agent1 -> main1
     return f"learned"
-    #return f"policy_{agent_id}"
+    # return f"policy_{agent_id}"
 
 class ResultSave(Callback):
     def on_trial_result(self, iteration, trials, trial, result, **info):
@@ -135,7 +135,7 @@ def main():
     parser.add_argument("--exploration", default='StochasticSampling', type=str,
                         choices=['StochasticSampling', 'EpsilonGreedy'])
     parser.add_argument("--benchmark",  default=False, type=eval, choices=[True, False])
-    parser.add_argument("--num_scenario", default=5, type=int)
+    parser.add_argument("--num_scenario", default=50, type=int)
 
     args = parser.parse_args()
 
@@ -159,7 +159,10 @@ def main():
             sectors[sector_id] = data.get_master_table()[sector_id]
             #TODO: Include more than 1 incident training scenario. Would it break the code ?
             scenario.extend(generate_scenario(sectors[sector_id], 1, args.poisson_mean)[0])
-        training_scenarios.append(scenario)
+
+        #create scenario if it is not a benchmark
+        if not args.benchmark:
+            training_scenarios.append(scenario)
 
     #setup subsector mapping
     for sector_id in args.sectors:
@@ -202,18 +205,22 @@ def main():
             agents_ids.extend(list(initial_schedules[sector_id][0].keys()))
     #load Waldy's training instance if otherwise
     else:
+        print ("Load Waldy's training instance")
         with open(f'./data/training_instances_{args.sectors}.pkl', 'rb') as f:
             training_instance = pickle.load(f)
             for sector_id in args.sectors:
                 initial_schedules[sector_id] = []
-                for idx in range(10): #TODO: temporary set to 10
+                for idx in range(args.num_scenario): #args.num_scenario
                     schedule = training_instance[idx][0]
                     #add initial schedule list
                     initial_schedules[sector_id].append(schedule[sector_id].get_time_tables())
                     #add scenario list
-                    training_scenarios.append(training_instance[idx][1][0])
                 agents_ids.extend(list(initial_schedules[sector_id][0].keys()))
-            #testing
+
+            for idx in range(args.num_scenario):
+                idx = 0
+                schedule = training_instance[idx][0]
+                training_scenarios.append(training_instance[idx][1][0])
 
     num_agents = len(agents_ids)
     T_max = len(T) - 1
@@ -245,11 +252,14 @@ def main():
     action_space = gym.spaces.Discrete(NUM_DISPATCH_ACTIONS)
 
     # agent_policy = {}
+    # i = 0
     # for k in agents_map['agentid_2_idx'].keys():
     #     key = f'policy_{k}'
-    #     key = f'policy_shared'
+    #     #key = f'policy_shared'
     #     agent_policy[key] = PolicySpec(observation_space=obs_space,
-    #                                 action_space=action_space)
+    #                                 action_space=action_space,
+    #                                    config={"agent_id": i})
+    #     i += 1
 
     ray.init()
 
@@ -328,7 +338,10 @@ def main():
                                'reward_policy': args.reward_policy,
                                'prefix_fpath': experiment_name,
                                },  # config to pass to env class
-
+                # "multiagent": {
+                #     "policies": agent_policy,
+                #     "policy_mapping_fn": policy_mapping_fn
+                # },
                 "multiagent": {
                     "policies_to_train": ["learned"],
                     "policies": {

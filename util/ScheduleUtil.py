@@ -574,10 +574,11 @@ def get_objective_value_MA(schedules_dict, sectors):
 
     total_presence_utility = get_patrol_presence_utility_MA(schedules_dict, sectors)
 
+    print (total_presence_utility, total_effective_patrol)
     if total_effective_patrol == 0:
         return 0
 
-    return total_presence_utility / total_effective_patrol
+    return total_presence_utility/total_effective_patrol
 
 
 def get_post_state_MA(schedule, Q_j, all_patrol_areas, k, subagent_dim):
