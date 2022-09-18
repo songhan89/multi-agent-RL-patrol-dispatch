@@ -36,9 +36,9 @@ Learning:
   at the end of the episode
 
 High priority
-* Clean up training code - standardise training iteration and episode [Not done]
+* Clean up training code - standardise training iteration and episode [Done]
 * How to resume training ? [Not done]
-* Fix edge cases
+* Fix edge cases [Not done]
 
 Medium
 * Setup benchmark with myopic [Done]
@@ -47,5 +47,9 @@ Medium
 
 Low priority
 * Understand the NN architecture size
+
+18 Sep
+* We found that the action choice - travel to nearest patrol area is causing suboptimal optimization, this action should be removed
+* Bug found with `least_disruption_action` whereby the heap queue was not implemented correctly
 
 

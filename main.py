@@ -29,35 +29,72 @@ from ray.rllib.policy.sample_batch import SampleBatch
 from ray.tune import Callback
 from ray.air import session
 
+logging_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'logs')
+logging.basicConfig(filename=os.path.join(logging_dir, 'madprp.log'),
+                    format='%(asctime)s,%(msecs)d %(levelname)-8s [%(filename)s:%(lineno)d] %(message)s',
+                    datefmt='%Y-%m-%d:%H:%M:%S',
+                    level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
 def policy_mapping_fn(agent_id, episode, worker, **kwargs):
-    # agent0 -> main0
-    # agent1 -> main1
-    return f"learned"
-    # return f"policy_{agent_id}"
+    return f"policy_{agent_id}"
+
+def get_policy(policy, agents_map, obs_space, action_space):
+
+    if policy == 'single':
+        return {
+            "policies_to_train": ["learned"],
+            "policies": {
+                "learned": PolicySpec(observation_space=obs_space,
+                                        action_space=action_space)
+            },
+            "policy_mapping_fn": lambda x: 'learned'
+        }
+
+    elif policy == 'multi':
+        agent_policy = {}
+        for i, k in enumerate(agents_map['agentid_2_idx'].keys()):
+            key = f'policy_{k}'
+            agent_policy[key] = PolicySpec(observation_space=obs_space,
+                                        action_space=action_space,
+                                           config={"agent_id": i})
+        return {
+            "policies": agent_policy,
+            "policy_mapping_fn": policy_mapping_fn
+        }
 
 class ResultSave(Callback):
     def on_trial_result(self, iteration, trials, trial, result, **info):
-        print(f"Trials: {trial}")
-        print(f"Iteration: {iteration}")
-        #print(f"Keys: {result.keys()}")
+        logger.debug(f"Trials: {trial}")
+        logger.debug(f"Iteration: {iteration}")
         if len(result['custom_metrics']) > 0:
             perc_incidents_responded_mean = result['custom_metrics']['perc_incidents_responded_mean']
             final_obj_val = result['custom_metrics']['final_schedule_obj_val_mean']
             initial_obj_val = result['custom_metrics']['initial_schedule_obj_val_mean']
             hamming_dist = result['custom_metrics']['hamming_dist_mean']
+            perc_incidents_responded_myopic = result['custom_metrics']['perc_incidents_responded_myopic_mean']
+            benchmark_obj_val = result['custom_metrics']['benchmark_obj_val_mean']
         else:
             perc_incidents_responded_mean = None
             final_obj_val = None
             initial_obj_val = None
             hamming_dist = None
-        print(f"episodes_total: {result['episodes_total']}")
-        print(f"training_iteration: {result['training_iteration']}")
-        print(f"time_total: {result['time_total_s']}")
-        print(f"episodes_this_iter: {result['episodes_this_iter']}")
-        print(f"perc_incidents_responded_mean: {perc_incidents_responded_mean}")
-        print(f"episode_reward_mean: {result['episode_reward_mean']}")
-        print(f"Final obj value: {final_obj_val}")
-        print(f"hamming_distance: {hamming_dist}")
+            perc_incidents_responded_myopic = None
+            benchmark_obj_val = None
+
+        logger.debug(f"episodes_total: {result['episodes_total']}")
+        logger.debug(f"training_iteration: {result['training_iteration']}")
+        logger.debug(f"time_total: {result['time_total_s']}")
+        logger.debug(f"episodes_this_iter: {result['episodes_this_iter']}")
+        logger.debug(f"perc_incidents_responded_mean: {perc_incidents_responded_mean}")
+        logger.debug(f"episode_reward_mean: {result['episode_reward_mean']}")
+        logger.debug(f"Final obj value: {final_obj_val}")
+        logger.debug(f"hamming_distance: {hamming_dist}")
 
         data = [result['episodes_total'],
                 result['training_iteration'],
@@ -65,8 +102,11 @@ class ResultSave(Callback):
                 result['episode_reward_mean'],
                 perc_incidents_responded_mean,
                 final_obj_val,
-                hamming_dist
+                hamming_dist,
+                perc_incidents_responded_myopic,
+                benchmark_obj_val
                 ]
+
         with open(f"./result/{trial}.csv", 'a') as f:
             writer = csv.writer(f) #this is the writer object
             writer.writerow(data) #this is the data
@@ -83,21 +123,12 @@ class MetricCallback(DefaultCallbacks):
         env_index: int,
         **kwargs
     ):
-        # Check if there are multiple episodes in a batch, i.e.
-        # "batch_mode": "truncate_episodes".
-        # if worker.policy_config["batch_mode"] == "truncate_episodes":
-        #     # Make sure this episode is really done.
-        #     assert episode.batch_builder.policy_collectors["default_policy"].batches[
-        #         -1
-        #     ]["dones"][-1], (
-        #         "ERROR: `on_episode_end()` should only be called "
-        #         "after episode is done!"
-        #     )
         episode.custom_metrics["perc_incidents_responded"] = None
         episode.custom_metrics["final_schedule_obj_val"] = None
         episode.custom_metrics["initial_schedule_obj_val"] = None
         episode.custom_metrics["hamming_dist"] = None
-        #episode.custom_metrics["save_fpath"] = None
+        episode.custom_metrics["perc_incidents_responded_myopic"] = None
+        episode.custom_metrics["benchmark_obj_val"] = None
 
         for agent_id in episode.get_agents():
             if len(episode.last_info_for(agent_id)) > 0:
@@ -109,19 +140,16 @@ class MetricCallback(DefaultCallbacks):
                     episode.last_info_for(agent_id)["initial_schedule_obj_val"]
                 episode.custom_metrics["hamming_dist"] = \
                     episode.last_info_for(agent_id)["hamming_dist"]
-
-
+                episode.custom_metrics["perc_incidents_responded_myopic"] = \
+                    episode.last_info_for(agent_id)["perc_incidents_responded_myopic"]
+                episode.custom_metrics["benchmark_obj_val"] = \
+                    episode.last_info_for(agent_id)["benchmark_obj_val"]
 
 def main():
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s.%(msecs)03d %(levelname)s %(module)s: %(message)s',
-                        datefmt='%Y-%m-%d %H:%M:%S')
-    default_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
     parser = argparse.ArgumentParser(description="Police Patrol environment")
-    parser.add_argument("--sectors", default='A', type=str)
+    parser.add_argument("--sectors", default='EFL', type=str)
     parser.add_argument("--model", default="PPO", type=str)
-    parser.add_argument("--max_iter", type=int, default=10000, help="Number of iterations to train.")
+    parser.add_argument("--max_iter", type=int, default=500, help="Number of iterations to train.")
     parser.add_argument("--poisson_mean", default=2, type=int)
     parser.add_argument("--encoding_size", default=5, type=int)
     parser.add_argument("--checkpoint", default='./checkpoint/')
@@ -135,11 +163,13 @@ def main():
     parser.add_argument("--exploration", default='StochasticSampling', type=str,
                         choices=['StochasticSampling', 'EpsilonGreedy'])
     parser.add_argument("--benchmark",  default=False, type=eval, choices=[True, False])
-    parser.add_argument("--num_scenario", default=50, type=int)
+    parser.add_argument("--num_scenario", default=500, type=int)
+    parser.add_argument("--learning_rate", default=0.0001, type=float)
+    parser.add_argument("--policy", default='single', choices=['single', 'multi'], type=str)
 
     args = parser.parse_args()
 
-    logging.info("Load input data..." + "\n")
+    logger.info("Load input data..." + "\n")
     # Load a preprocessed data
     with open("./data/processed_data.pkl", "rb") as fp:
         data = pickle.load(fp)
@@ -150,6 +180,7 @@ def main():
     subsectors_map = {'subsector_2_idx':{}, 'idx_2_subsector':{}}
     agents_map = {'agentid_2_idx':{}, 'idx_2_agentid':{}}
     training_scenarios = []
+    training_benchmark = []
 
     #get all subsectors under each sector into a global list
     idx = 0
@@ -157,12 +188,12 @@ def main():
         scenario = []
         for sector_id in args.sectors:
             sectors[sector_id] = data.get_master_table()[sector_id]
-            #TODO: Include more than 1 incident training scenario. Would it break the code ?
             scenario.extend(generate_scenario(sectors[sector_id], 1, args.poisson_mean)[0])
 
         #create scenario if it is not a benchmark
         if not args.benchmark:
             training_scenarios.append(scenario)
+            training_benchmark.append((0, 0))
 
     #setup subsector mapping
     for sector_id in args.sectors:
@@ -188,9 +219,7 @@ def main():
         config_json = json.load(f)
 
     exploration_config = config_json['exploration_config'][args.exploration]
-
     initial_schedules = {}
-
     agents_ids = []
 
     #if not running benchmark training, then load initial schedules from archive
@@ -203,9 +232,10 @@ def main():
                     initial_schedules[sector_id].append(schedule.get_time_tables())
             #agent ids
             agents_ids.extend(list(initial_schedules[sector_id][0].keys()))
+
     #load Waldy's training instance if otherwise
     else:
-        print ("Load Waldy's training instance")
+        logger.info ("Load Waldy's training instance")
         with open(f'./data/training_instances_{args.sectors}.pkl', 'rb') as f:
             training_instance = pickle.load(f)
             for sector_id in args.sectors:
@@ -218,9 +248,10 @@ def main():
                 agents_ids.extend(list(initial_schedules[sector_id][0].keys()))
 
             for idx in range(args.num_scenario):
-                idx = 0
-                schedule = training_instance[idx][0]
                 training_scenarios.append(training_instance[idx][1][0])
+                #response ratio and obj value
+                training_benchmark.append((training_instance[idx][2][1]/training_instance[idx][2][-1],
+                                           training_instance[idx][2][2]))
 
     num_agents = len(agents_ids)
     T_max = len(T) - 1
@@ -251,49 +282,37 @@ def main():
             ))
     action_space = gym.spaces.Discrete(NUM_DISPATCH_ACTIONS)
 
-    # agent_policy = {}
-    # i = 0
-    # for k in agents_map['agentid_2_idx'].keys():
-    #     key = f'policy_{k}'
-    #     #key = f'policy_shared'
-    #     agent_policy[key] = PolicySpec(observation_space=obs_space,
-    #                                 action_space=action_space,
-    #                                    config={"agent_id": i})
-    #     i += 1
-
+    #set experiment name - for resume to reuse checkpoint
+    experiment_name = f"{args.sectors}_{args.model}_{args.max_iter}_{args.poisson_mean}_{args.encoding_size}" \
+                      f"_{args.num_scenario}_{args.exploration}_{args.policy}"
+    logger.info ("----------------------------------------")
+    logger.info ("Starting Rlib training")
+    logger.info(f"Sectors: {experiment_name}")
+    logger.info (f"Sectors: {args.sectors}")
+    logger.info (f"Number of agents: {num_agents}")
+    logger.info (f"{agents_map}")
+    logger.info (f"Number of subsectors: {num_subsectors}")
+    logger.info("----------------------------------------")
     ray.init()
 
-    print ("----------------------------------------")
-    print ("Starting Rlib training")
-    print (f"Sectors: {args.sectors}")
-    print (f"Number of agents: {num_agents}")
-    print (f"{agents_map}")
-    print (f"Number of subsectors: {num_subsectors}")
-    print("----------------------------------------")
-
-    #set experiment name - for resume to reuse checkpoint
-    experiment_name = f"{args.sectors}_{args.model}_{args.max_iter}_{args.poisson_mean}_{args.encoding_size}"\
-                      f"_{args.exploration}"
-
     #if it is not a resume, delete the checkpoint and start over
-
     checkpoint_path = Path(args.checkpoint, experiment_name)
 
     if checkpoint_path.exists() and checkpoint_path.is_dir():
         if args.resume:
-            print(f"Previous checkpoint {checkpoint_path} exists. Reloading from this checkpoint.")
+            logger.info(f"Previous checkpoint {checkpoint_path} exists. Reloading from this checkpoint.")
         else:
-            print(f"Previous checkpoint {checkpoint_path} exists. Overwriting this checkpoint.")
+            logger.info(f"Previous checkpoint {checkpoint_path} exists. Overwriting this checkpoint.")
             shutil.rmtree(checkpoint_path)
     else:
-        print(f"No checkpoint {checkpoint_path} exists.")
+        logger.info(f"No checkpoint {checkpoint_path} exists.")
 
     #output for metric result
     cur_date = datetime.now().strftime("%Y%m%d_%H%M")
     prefix_fpath = f"{cur_date}_{experiment_name}"
 
     if args.resume:
-        print ("Restoring from previous checkpoint")
+        logger.info ("Restoring from previous checkpoint")
         tuner = tune.Tuner.restore(
             path=Path().resolve().joinpath(checkpoint_path).as_posix(),
             resume_unfinished=True,
@@ -313,12 +332,8 @@ def main():
                     syncer=None  # Disable syncing
                 ),
                 verbose=args.verbose,
-                callbacks=[ResultSave()],
-                log_to_file=f"prefix_fpath.log"
-                # resume=args.resume,
-                # checkpoint_freq=args.max_iter // 100,
-                # checkpoint_at_end=True,
-                # max_failures=3,
+                #callbacks=[ResultSave()], #not required anymore since it is saved in `progress.csv`
+                log_to_file=f"{prefix_fpath}.log"
             ),
             param_space={
                 "env": PatrolEnv,
@@ -336,23 +351,20 @@ def main():
                                'scenarios': training_scenarios,
                                'Q_j': Q_j,
                                'reward_policy': args.reward_policy,
-                               'prefix_fpath': experiment_name,
+                               'benchmark': training_benchmark
                                },  # config to pass to env class
+                "multiagent": get_policy(args.policy, agents_map, obs_space, action_space),
                 # "multiagent": {
-                #     "policies": agent_policy,
+                #     "policies_to_train": ["learned"],
+                #     "policies": {
+                #         "learned": PolicySpec(observation_space=obs_space,
+                #                               action_space=action_space)
+                #     },
                 #     "policy_mapping_fn": policy_mapping_fn
                 # },
-                "multiagent": {
-                    "policies_to_train": ["learned"],
-                    "policies": {
-                        "learned": PolicySpec(observation_space=obs_space,
-                                              action_space=action_space)
-                    },
-                    "policy_mapping_fn": policy_mapping_fn
-                },
                 "preprocessor_pref": "rllib",
                 "gamma": 1.0,
-                "lr": 0.0001, #0.0001
+                "lr": args.learning_rate, #0.0001
                 "explore": True,
                 "exploration_config": exploration_config,
                 "ignore_worker_failures": True,

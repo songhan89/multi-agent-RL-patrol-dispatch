@@ -1,15 +1,20 @@
 {
   "travel_matrix_fpath": "./data/RawData/travel_time_matrix.pkl",
   "exploration_config": {
-                    "StochasticSampling": {
-                      "type": "StochasticSampling",
-                      "random_timesteps": 0
-                },
-                  "EpsilonGreedy": {
-                    "type": "EpsilonGreedy",
-                   "initial_epsilon": 0.1,
-                   "final_epsilon": 0.01,
-                   "epsilon_timesteps": 100
-                }
-}
+    "StochasticSampling": {
+      "type": "StochasticSampling",
+      "random_timesteps": 0
+    },
+    "EpsilonGreedy": {
+      "type": "EpsilonGreedy",
+     "initial_epsilon": 0.1,
+     "final_epsilon": 0.01,
+     "epsilon_timesteps": 100
+    }
+  },
+  "model": {
+    "default": {
+      "conv_activation": "relu"
+    }
+  }
 }

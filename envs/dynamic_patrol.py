@@ -16,14 +16,15 @@ class PatrolEnv(MultiAgentEnv):
     def __init__(self, config: EnvContext):
 
         self._schedule_attr = ['time', 'incident', 'patrol_penalty', 'patrol_util']
-        #.csv filename
-        self._save_fpath = config['prefix_fpath']
         #set of agent ids
         self._agent_ids = set(config['agent_ids'])
         # list of incident scenarios of training scenario
         self._scenarios_list = config['scenarios']
+        self._benchmark_list = config['benchmark']
         # initialise with the first option
         self._scenarios = self._scenarios_list[0]
+        # tuple of benchmark score for myopic (index 0 - percentage of incident responded, index 1 - obj value)
+        self._benchmark = self._benchmark_list[0]
         #mapping for subsector and agent ids <-> index
         self._subsector_map = config['subsectors_map']
         self._agents_map = config['agents_map']
@@ -110,12 +111,19 @@ class PatrolEnv(MultiAgentEnv):
                 self._action_history[agent][action] = 0
 
         #randomly select an initial schedule
-        #TODO: Remove set fixed seed
         selected_idx = random.randint(0, self._num_initial_schedules - 1)
-        #initialise scenarios
+        #TODO: This is a temporary solution to bypass incident that start at T = 0 which causes problem
+        while self._scenarios_list[selected_idx][0].get_start_time() == 0:
+            selected_idx = random.randint(0, self._num_initial_schedules - 1)
+
+        # initialise scenarios
         self._scenarios = self._scenarios_list[selected_idx]
+        self._benchmark = self._benchmark_list[selected_idx]
         first_scenario = self._scenarios[0]
         self._incidents = self._create_scenarios()
+
+        #TODO: remove fixed seed
+        #selected_idx = 0
 
         for sector in self._initial_schedules.keys():
             for agent in self._initial_schedules[sector][selected_idx].keys():
@@ -190,10 +198,10 @@ class PatrolEnv(MultiAgentEnv):
                 rew[agent_id] = self._action_continue(agent_id)
             # travel to nearest old locations
             elif action == 2:
-                rew[agent_id] = self._action_travel_nearest(agent_id, method='old')
+                rew[agent_id] = self._action_least_disruption(agent_id)
             #travel to nearest new locations
             elif action == 3:
-                rew[agent_id] = self._action_travel_nearest(agent_id, method='new')
+                rew[agent_id] = self._action_least_disruption(agent_id)
             #patrol area that result in schedule with least disruption
             elif action == 4:
                 rew[agent_id] = self._action_least_disruption(agent_id)
@@ -201,6 +209,26 @@ class PatrolEnv(MultiAgentEnv):
                 rew[agent_id] = self._action_obj_based_jobs(agent_id, method='old')
             elif action == 6:
                 rew[agent_id] = self._action_obj_based_jobs(agent_id, method='new')
+
+            #if respond/dispatch to incident
+            # if action == 0:
+            #     rew[agent_id] = self._action_respond(agent_id, incident_loc_idx)
+            # #if continue same action
+            # elif action == 1:
+            #     rew[agent_id] = self._action_continue(agent_id)
+            # # travel to nearest old locations
+            # elif action == 2:
+            #     rew[agent_id] = self._action_travel_nearest(agent_id, method='old')
+            # #travel to nearest new locations
+            # elif action == 3:
+            #     rew[agent_id] = self._action_travel_nearest(agent_id, method='new')
+            # #patrol area that result in schedule with least disruption
+            # elif action == 4:
+            #     rew[agent_id] = self._action_least_disruption(agent_id)
+            # elif action == 5:
+            #     rew[agent_id] = self._action_obj_based_jobs(agent_id, method='old')
+            # elif action == 6:
+            #     rew[agent_id] = self._action_obj_based_jobs(agent_id, method='new')
 
             info[agent_id] = {}
 
@@ -235,13 +263,13 @@ class PatrolEnv(MultiAgentEnv):
                                          self._subsector_map['subsector_2_idx'].keys(),
                                          self._Q_j_idx)
             # self._state.to_string()
-            # print(f"End of episode obj val: {obj_val}")
-            # print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}")
+            print(f"End of episode obj val: {obj_val}")
+            print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}")
             # print(f"Action space distribution: {self._action_history}")
             hamming_dist = hamming_distance(self._state.get_state('initial_schedule'),
                                             self._state.get_state('schedule'))
-            # print(f"Hamming distance from initial schedule: {hamming_dist}")
-            # print("------------------------------\n")
+            print(f"Hamming distance from initial schedule: {hamming_dist}")
+            print("------------------------------\n")
 
             #get reward at the end of episode if reward policy selected is `end_of_episode`
             if self._reward_policy == 'end_of_episode':
@@ -251,11 +279,12 @@ class PatrolEnv(MultiAgentEnv):
             info[agent_id] = {
                 'hamming_dist': hamming_dist,
                 'perc_incidents_responded': 1.0 * self._responded / len(self._scenarios),
+                'perc_incidents_responded_myopic': self._benchmark[0],
                 'final_schedule_obj_val': obj_val,
                 'initial_schedule_obj_val': get_objective_value_MA(self._state.get_state('initial_schedule'),
                                self._subsector_map['subsector_2_idx'].keys(),
                                self._Q_j_idx),
-                #'save_fpath': self._save_fpath
+                'benchmark_obj_val': self._benchmark[1]
                 }
 
         return obs, rew, done, info
@@ -312,7 +341,6 @@ class PatrolEnv(MultiAgentEnv):
 
             #change response state to true
             respond_state[0] = 1
-
             self._responded += 1
 
         self._state.update_state(agent_arrival_time=arrival_time_state, schedule=schedule_state,
@@ -322,8 +350,12 @@ class PatrolEnv(MultiAgentEnv):
         objective_val_after = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
                                         self._Q_j_idx)
         penalty_val = hamming_distance(initial_state, schedule_state)
-        reward = response_utility_fn(response_time) / len(self._incidents.keys()) + \
-                 objective_val_after - obj_val_before - THETA * penalty_val
+        #reward = response_utility_fn(response_time) / len(self._incidents.keys()) + \
+        #         objective_val_after - obj_val_before - THETA * penalty_val
+        #TODO: remove
+        reward = OMEGA * response_utility_fn(response_time) / len(self._incidents.keys()) + \
+                  - THETA * penalty_val
+
         if self._reward_policy == 'end_of_episode':
             self._response_utility += response_utility_fn(response_time)
             reward = OMEGA * response_utility_fn(response_time) / len(self._incidents.keys())
@@ -382,7 +414,7 @@ class PatrolEnv(MultiAgentEnv):
             if self._reward_policy == 'end_of_episode':
                 reward = 0
             else:
-                reward = objective_val_after - obj_val_before - THETA * penalty_val
+                reward = - THETA * penalty_val #objective_val_after - obj_val_before - THETA * penalty_val
 
         #increase action count
         self._action_history[agent_id][1] += 1
@@ -416,9 +448,9 @@ class PatrolEnv(MultiAgentEnv):
         except:
             print(self._timestep)
             print(schedule_state[agent_idx])
-            print (agent_cur_loc_idx)
-            print (self._subsector_map['idx_2_subsector'])
-            print ("*****************************************")
+            print(agent_cur_loc_idx)
+            print(self._subsector_map['idx_2_subsector'])
+            print("*****************************************")
             raise ValueError
 
         obj_val_before = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
@@ -456,12 +488,41 @@ class PatrolEnv(MultiAgentEnv):
             if len(nearest_job_loc) == 0:
                 hq.heappush(nearest_job_loc, (job_dist, job_loc))
             else:
-                if nearest_job_loc[0][0] > job_dist:
-                    hq.heappushpop(nearest_job_loc, (job_dist, job_loc))
-                elif nearest_job_loc[0][0] == job_dist:
+                if nearest_job_loc[0][0] == job_dist:
                     hq.heappush(nearest_job_loc, (job_dist, job_loc))
+                else:
+                    if nearest_job_loc[0][0] > job_dist:
+                        nearest_job_loc = []
+                        hq.heappush(nearest_job_loc, (job_dist, job_loc))
 
-        min_job_dist, chosen_job_loc = random.choice(nearest_job_loc)
+        dist_list = []
+        #choose the job that has the lowest hamming distance
+        for job_dist, subsector_loc in nearest_job_loc:
+            next_state = deepcopy(schedule_state)
+            if agent_cur_loc != subsector_loc:
+                response_time = self._travel_matrix[agent_cur_loc][subsector_loc]
+                i = 0
+                while i < response_time and (t + i) < self._T_max:
+                    next_state[agent_idx][t+i] = -1
+                    i += 1
+
+                if t + i < self._T_max:
+                    next_state[agent_idx][t+i] = self._subsector_map['subsector_2_idx'][subsector_loc]
+
+                dist = hamming_distance(initial_state, next_state)
+
+                if len(dist_list) == 0:
+                    hq.heappush(dist_list, (dist, subsector_loc, response_time))
+                else:
+                    if dist_list[0][0] == dist:
+                        hq.heappush(dist_list, (dist, subsector_loc, response_time))
+                    else:
+                        if dist_list[0][0] > dist:
+                            dist_list = []
+                            hq.heappush(dist_list, (dist, subsector_loc, response_time))
+
+        _, chosen_job_loc, min_job_dist = random.choice(dist_list)
+        # min_job_dist, chosen_job_loc = random.choice(nearest_job_loc)
 
         schedule_state[agent_idx][t] = -1
         travel_status_state[agent_idx] = 1
@@ -474,10 +535,12 @@ class PatrolEnv(MultiAgentEnv):
         objective_val_after = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
                                         self._Q_j_idx)
         penalty_val = hamming_distance(initial_state, schedule_state)
-        reward = objective_val_after - obj_val_before - THETA * penalty_val
-
+        #reward = objective_val_after - obj_val_before - THETA * penalty_val
+        #TODO: remove
+        reward = - THETA * penalty_val
         if self._reward_policy == 'end_of_episode':
             reward = 0
+
 
         #increase action count
         if method == 'old':
@@ -513,36 +576,49 @@ class PatrolEnv(MultiAgentEnv):
         agent_src_loc = self._subsector_map['idx_2_subsector'][travel_dest_state[agent_idx]]
 
         dist_list = []
+        full_list = []
+
         #find the next patrol area that results in lowest hamming distance deviation from initial schedule
         for subsector_loc in self._travel_matrix.keys():
             next_state = deepcopy(schedule_state)
-            if agent_src_loc != subsector_loc:
-                response_time = self._travel_matrix[agent_src_loc][subsector_loc]
-                i = 0
-                while i < response_time and (t + i) < self._T_max:
-                    next_state[agent_idx][t+i] = -1
-                    i += 1
+            # if agent_src_loc != subsector_loc:
+            response_time = self._travel_matrix[agent_src_loc][subsector_loc]
+            i = 0
+            while i < response_time and (t + i) < self._T_max:
+                next_state[agent_idx][t+i] = -1
+                i += 1
 
-                if t + i < self._T_max:
-                    next_state[agent_idx][t+i] = self._subsector_map['subsector_2_idx'][subsector_loc]
+            if t + i < self._T_max:
+                next_state[agent_idx][t+i] = self._subsector_map['subsector_2_idx'][subsector_loc]
 
-                dist = hamming_distance(initial_schedule, next_state)
+            dist = hamming_distance(initial_schedule, next_state)
+            #TODO: remove?
+            #dist = hamming_distance([initial_schedule[agent_idx]], [next_state[agent_idx]])
 
-                if len(dist_list) == 0:
-                    hq.heappush(dist_list, (dist, subsector_loc))
+            full_list.append((dist, subsector_loc))
+
+            if len(dist_list) == 0:
+                hq.heappush(dist_list, (dist, subsector_loc, response_time))
+            else:
+                if dist_list[0][0] == dist:
+                    hq.heappush(dist_list, (dist, subsector_loc, response_time))
                 else:
                     if dist_list[0][0] > dist:
-                        hq.heappushpop(dist_list, (dist, subsector_loc))
-                    elif dist_list[0][0] == dist:
-                        hq.heappush(dist_list, (dist, subsector_loc))
+                        dist_list = []
+                        hq.heappush(dist_list, (dist, subsector_loc, response_time))
 
-        dest_response_time, selected_dest = random.choice(dist_list)
+        _, selected_dest, dest_response_time = random.choice(dist_list)
         selected_dest_idx = self._subsector_map['subsector_2_idx'][selected_dest]
 
         if dest_response_time > 0:
             schedule_state[agent_idx][t] = -1
             arrival_time_state[agent_idx] = t + dest_response_time
             agent_travel_status[agent_idx] = 1
+            travel_dest_state[agent_idx] = selected_dest_idx
+        elif dest_response_time == 0:
+            schedule_state[agent_idx][t] = selected_dest_idx
+            arrival_time_state[agent_idx] = t + dest_response_time
+            agent_travel_status[agent_idx] = 0
             travel_dest_state[agent_idx] = selected_dest_idx
         else:
             raise ValueError
@@ -553,8 +629,9 @@ class PatrolEnv(MultiAgentEnv):
         objective_val_after = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
                                         self._Q_j_idx)
         penalty_val = hamming_distance(initial_schedule, schedule_state)
-        reward = objective_val_after - obj_val_before - THETA * penalty_val
-
+        #reward = objective_val_after - obj_val_before - THETA * penalty_val
+        #TODO: remove
+        reward = - THETA * penalty_val
         if self._reward_policy == 'end_of_episode':
             reward = 0
 
@@ -625,7 +702,7 @@ class PatrolEnv(MultiAgentEnv):
             job_list = list(new_jobs)
 
         obj_list = []
-        #find the next patrol area that results in lowest hamming distance deviation from initial schedule
+        #find the next patrol area that results in best obj value
         for subsector_loc in job_list:
             next_state = deepcopy(schedule_state)
             if agent_cur_loc != subsector_loc:
@@ -643,12 +720,42 @@ class PatrolEnv(MultiAgentEnv):
                 if len(obj_list) == 0:
                     hq.heappush(obj_list, (next_state_obj, subsector_loc))
                 else:
-                    if obj_list[0][0] > next_state_obj:
-                        hq.heappushpop(obj_list, (next_state_obj, subsector_loc))
-                    elif obj_list[0][0] == next_state_obj:
+                    if obj_list[0][0] == next_state_obj:
                         hq.heappush(obj_list, (next_state_obj, subsector_loc))
+                    else:
+                        if obj_list[0][0] > next_state_obj:
+                            obj_list = []
+                            hq.heappush(obj_list, (next_state_obj, subsector_loc))
 
-        selected_dest =  random.choice(obj_list)[1]
+        dist_list = []
+        #choose the job that has the lowest hamming distance
+        for job_dist, subsector_loc in obj_list:
+            next_state = deepcopy(schedule_state)
+            if agent_cur_loc != subsector_loc:
+                response_time = self._travel_matrix[agent_cur_loc][subsector_loc]
+                i = 0
+                while i < response_time and (t + i) < self._T_max:
+                    next_state[agent_idx][t+i] = -1
+                    i += 1
+
+                if t + i < self._T_max:
+                    next_state[agent_idx][t+i] = self._subsector_map['subsector_2_idx'][subsector_loc]
+
+                dist = hamming_distance(initial_state, next_state)
+
+                if len(dist_list) == 0:
+                    hq.heappush(dist_list, (dist, subsector_loc, response_time))
+                else:
+                    if dist_list[0][0] == dist:
+                        hq.heappush(dist_list, (dist, subsector_loc, response_time))
+                    else:
+                        if dist_list[0][0] > dist:
+                            dist_list = []
+                            hq.heappush(dist_list, (dist, subsector_loc, response_time))
+
+        _, selected_dest, min_job_dist = random.choice(dist_list)
+
+        # selected_dest =  random.choice(obj_list)[1]
         dest_response_time = self._travel_matrix[agent_cur_loc][selected_dest]
         selected_dest_idx = self._subsector_map['subsector_2_idx'][selected_dest]
 
@@ -666,8 +773,9 @@ class PatrolEnv(MultiAgentEnv):
         objective_val_after = get_objective_value_MA(schedule_state, self._subsector_map['subsector_2_idx'].keys(),
                                         self._Q_j_idx)
         penalty_val = hamming_distance(initial_state, schedule_state)
-        reward = objective_val_after - obj_val_before - THETA * penalty_val
-
+        #reward = objective_val_after - obj_val_before - THETA * penalty_val
+        #TODO: remove
+        reward = - THETA * penalty_val
         if self._reward_policy == 'end_of_episode':
             reward = 0
 
