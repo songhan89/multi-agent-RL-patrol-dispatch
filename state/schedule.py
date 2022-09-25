@@ -19,6 +19,7 @@ class Schedule(object):
         self._state['agent_travel_status'] = [0] * num_agents
         self._state['agent_travel_dest']  = [-1] * num_agents
         self._state['agent_arrival_time']  = [-1] * num_agents
+        self._state['incident_t_resolution'] = [-1]
 
     def update_state(self, **kwargs):
 

@@ -53,4 +53,4 @@ Low priority
 * Bug found with `least_disruption_action` whereby the heap queue was not implemented correctly [done]
 
 25 Sep
-* Add additional metric to return response rate per sector
+* Add additional metric to return response rate per sector [done]

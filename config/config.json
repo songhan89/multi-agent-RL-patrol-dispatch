@@ -15,6 +15,13 @@
   "model": {
     "default": {
       "conv_activation": "relu"
+    },
+    "128x128_relu_attention": {
+      "fcnet_hiddens": [128, 128],
+      "fcnet_activation": "relu",
+      "conv_activation": "relu",
+      "use_attention": 1
     }
   }
 }
+

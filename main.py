@@ -129,6 +129,8 @@ class MetricCallback(DefaultCallbacks):
         episode.custom_metrics["hamming_dist"] = None
         episode.custom_metrics["perc_incidents_responded_myopic"] = None
         episode.custom_metrics["benchmark_obj_val"] = None
+        episode.custom_metrics["worst_response"] = None
+
 
         for agent_id in episode.get_agents():
             if len(episode.last_info_for(agent_id)) > 0:
@@ -144,6 +146,8 @@ class MetricCallback(DefaultCallbacks):
                     episode.last_info_for(agent_id)["perc_incidents_responded_myopic"]
                 episode.custom_metrics["benchmark_obj_val"] = \
                     episode.last_info_for(agent_id)["benchmark_obj_val"]
+                episode.custom_metrics["worst_response"] = \
+                    episode.last_info_for(agent_id)["worst_response"]
 
 def main():
     parser = argparse.ArgumentParser(description="Police Patrol environment")
@@ -166,6 +170,7 @@ def main():
     parser.add_argument("--num_scenario", default=500, type=int)
     parser.add_argument("--learning_rate", default=0.0001, type=float)
     parser.add_argument("--policy", default='single', choices=['single', 'multi'], type=str)
+    parser.add_argument("--nn_network", default='default', choices=['default', '128x128_relu_attention'], type=str)
 
     args = parser.parse_args()
 
@@ -177,7 +182,9 @@ def main():
     global_time_matrix = data.get_time_matrix()
     time_matrix = {}
     sectors = {}
-    subsectors_map = {'subsector_2_idx':{}, 'idx_2_subsector':{}}
+    sectors_info = {}
+    subsectors_map = {'subsector_2_idx':{}, 'idx_2_subsector':{},
+                      'subsector_parent_sector': {}, 'idx_parent_sector': {}}
     agents_map = {'agentid_2_idx':{}, 'idx_2_agentid':{}}
     training_scenarios = []
     training_benchmark = []
@@ -197,9 +204,13 @@ def main():
 
     #setup subsector mapping
     for sector_id in args.sectors:
+        #append all subsectors under the sector to this info dict
+        sectors_info[sector_id] = list(sectors[sector_id].get_patrol_areas_table().keys())
         for patrol_area in sectors[sector_id].get_all_patrol_areas():
+            subsectors_map['subsector_parent_sector'][patrol_area.get_id()] = sector_id
             subsectors_map['subsector_2_idx'][patrol_area.get_id()] = idx
             subsectors_map['idx_2_subsector'][idx] = patrol_area.get_id()
+            subsectors_map['idx_parent_sector'][idx] = sector_id
             idx += 1
 
     for i, src in enumerate(subsectors_map['subsector_2_idx'].keys()):
@@ -219,6 +230,7 @@ def main():
         config_json = json.load(f)
 
     exploration_config = config_json['exploration_config'][args.exploration]
+    model_config = config_json['model'][args.nn_network]
     initial_schedules = {}
     agents_ids = []
 
@@ -284,7 +296,8 @@ def main():
 
     #set experiment name - for resume to reuse checkpoint
     experiment_name = f"{args.sectors}_{args.model}_{args.max_iter}_{args.poisson_mean}_{args.encoding_size}" \
-                      f"_{args.num_scenario}_{args.exploration}_{args.policy}"
+                      f"_{args.num_scenario}_{args.exploration}_{args.policy}_{args.nn_network}"
+
     logger.info ("----------------------------------------")
     logger.info ("Starting Rlib training")
     logger.info(f"Sectors: {experiment_name}")
@@ -337,6 +350,7 @@ def main():
             ),
             param_space={
                 "env": PatrolEnv,
+                "framework": "tf",
                 "callbacks": MetricCallback,
                 "num_gpus": args.num_gpus,
                 "num_envs_per_worker": args.num_envs_per_worker,
@@ -351,7 +365,8 @@ def main():
                                'scenarios': training_scenarios,
                                'Q_j': Q_j,
                                'reward_policy': args.reward_policy,
-                               'benchmark': training_benchmark
+                               'benchmark': training_benchmark,
+                               'sectors_info': sectors_info
                                },  # config to pass to env class
                 "multiagent": get_policy(args.policy, agents_map, obs_space, action_space),
                 "preprocessor_pref": "rllib",
@@ -361,13 +376,7 @@ def main():
                 "exploration_config": exploration_config,
                 "ignore_worker_failures": True,
                 "recreate_failed_workers": True,
-                "model": {
-                    # "fcnet_hiddens": [64, 64],
-                    # "fcnet_activation": "relu",
-                    # "use_attention": False,
-                    "conv_filters": None,
-                    "conv_activation": "relu",
-                }
+                "model": model_config
             },
         )
     result = tuner.fit().get_best_result()
@@ -418,7 +427,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 

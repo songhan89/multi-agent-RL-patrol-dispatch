@@ -65,7 +65,7 @@ EPS_DECAY = 1000
 #weight for hamming distance penalty
 THETA = 0.5 #0.5 is ok #1
 #weight for respond reward
-OMEGA = 2 #10, 2 #100 worked for EFL #1
+OMEGA = 2 #5 #100 worked for EFL #1
 #penalty for invalid action
 PHI = 0
 

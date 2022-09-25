@@ -21,6 +21,8 @@ class PatrolEnv(MultiAgentEnv):
         # list of incident scenarios of training scenario
         self._scenarios_list = config['scenarios']
         self._benchmark_list = config['benchmark']
+        # list of sector <-> subsector mapping
+        self._sectors_info = config['sectors_info']
         # initialise with the first option
         self._scenarios = self._scenarios_list[0]
         # tuple of benchmark score for myopic (index 0 - percentage of incident responded, index 1 - obj value)
@@ -41,6 +43,8 @@ class PatrolEnv(MultiAgentEnv):
         self.dones = set()
         self._spaces_in_preferred_format = True
         self._timestep = 0
+        #counter track for number of incidents responded in each sector
+        self._responded_sectors = {k:{'count':0, 'responded':0} for k in self._sectors_info.keys()}
         self._responded = 0
         self._response_utility = 0
         #convert str keys to int keys
@@ -100,6 +104,8 @@ class PatrolEnv(MultiAgentEnv):
         self._state = Schedule(self._T_max, self._num_agents, self._subsector_map, self._agents_map)
         initial_schedule = self._state.get_state('initial_schedule')
         res_schedule = self._state.get_state('schedule')
+        #reset response rate at the start of the episode
+        self._responded_sectors = {k:{'count':0, 'responded':0} for k in self._sectors_info.keys()}
         self._responded = 0
         self._response_utility = 0
 
@@ -122,6 +128,11 @@ class PatrolEnv(MultiAgentEnv):
         first_scenario = self._scenarios[0]
         self._incidents = self._create_scenarios()
 
+        for incident in self._scenarios:
+            incident_subsector = incident.get_location().get_id()
+            parent_sector = self._subsector_map['subsector_parent_sector'][incident_subsector]
+            self._responded_sectors[parent_sector]['count'] += 1
+
         #TODO: remove fixed seed
         #selected_idx = 0
 
@@ -139,9 +150,12 @@ class PatrolEnv(MultiAgentEnv):
         #time step of incident
         incident_idx = self._subsector_map['subsector_2_idx'][first_scenario.get_location().get_id()]
         t_incident = first_scenario.get_start_time() // 10
+        t_incident_resolution = first_scenario.get_resolution_time() // 10
         #update timestep of incident, subsector location of incident and response status
-        self._state.update_state(time_step=[t_incident], incident_loc=[incident_idx],
-                                  responded=[0])
+        self._state.update_state(time_step=[t_incident],
+                                 incident_loc=[incident_idx],
+                                 incident_t_resolution=[t_incident_resolution],
+                                 responded=[0])
         #agent travel status
         res_travel, res_agent_dest, res_agent_arr = self._get_travel_status(res_schedule, t_incident)
         self._state.update_state(agent_travel_status=res_travel, agent_travel_dest=res_agent_dest,
@@ -175,6 +189,7 @@ class PatrolEnv(MultiAgentEnv):
 
         state_schedule = self._state.get_state('schedule')
         incident_loc_idx = self._state.get_state('incident_loc')[0]
+        incident_t_resolution = self._state.get_state('incident_t_resolution')[0]
         agent_travel_status = self._state.get_state('agent_travel_status')
         # print (action_dict.items())
         # print (f"Timestamp: {self._timestep}")
@@ -192,7 +207,7 @@ class PatrolEnv(MultiAgentEnv):
 
             #if respond/dispatch to incident
             if action == 0:
-                rew[agent_id] = self._action_respond(agent_id, incident_loc_idx)
+                rew[agent_id] = self._action_respond(agent_id, incident_loc_idx, incident_t_resolution)
             #if continue same action
             elif action == 1:
                 rew[agent_id] = self._action_continue(agent_id)
@@ -213,14 +228,17 @@ class PatrolEnv(MultiAgentEnv):
         incident = self._incidents.get(self._timestep, None)
         if incident is None:
             incident_loc_idx = - 1
+            incident_t_end = -1
         else:
             incident_loc = incident['subsector_id']
+            incident_t_resolution = incident['end']
             incident_loc_idx = self._subsector_map['subsector_2_idx'][incident_loc]
 
         #reset to zero
         self._state.update_state(responded=[0])
         self._state.update_state(incident_loc=[incident_loc_idx])
         self._state.update_state(time_step=[self._timestep])
+        self._state.update_state(incident_t_resolution=[incident_t_resolution])
 
         for agent_id in self._agent_ids:
             obs[agent_id] = self._state.get_observation()
@@ -239,8 +257,17 @@ class PatrolEnv(MultiAgentEnv):
                                          self._Q_j_idx)
             # self._state.to_string()
             print(f"End of episode obj val: {obj_val}")
-            print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}")
-            # print(f"Action space distribution: {self._action_history}")
+            print(f"Number of incidents responded to: {self._responded} / {len(self._scenarios)}, "
+                  f"{100.0 * self._responded / len(self._scenarios)}")
+            worst_sector_response = 1e7
+            for k, v in self._responded_sectors.items():
+                response_rate = 100.0 * v['responded'] / v['count']
+                print(f"Sector {k}: Number of incidents responded to: {v['responded']}/{v['count']}, "
+                  f"{response_rate}")
+                if response_rate < worst_sector_response:
+                    worst_sector_response = response_rate
+            print(f"Worst sector response rate: {worst_sector_response}")
+            print(f"Action space distribution: {self._action_history}")
             hamming_dist = hamming_distance(self._state.get_state('initial_schedule'),
                                             self._state.get_state('schedule'))
             print(f"Hamming distance from initial schedule: {hamming_dist}")
@@ -259,7 +286,8 @@ class PatrolEnv(MultiAgentEnv):
                 'initial_schedule_obj_val': get_objective_value_MA(self._state.get_state('initial_schedule'),
                                self._subsector_map['subsector_2_idx'].keys(),
                                self._Q_j_idx),
-                'benchmark_obj_val': self._benchmark[1]
+                'benchmark_obj_val': self._benchmark[1],
+                'worst_response': worst_sector_response
                 }
 
         return obs, rew, done, info
@@ -267,11 +295,12 @@ class PatrolEnv(MultiAgentEnv):
     def seed(self, seed=None):
         random.seed(seed)
 
-    def _action_respond(self, agent_id, incident_loc_idx):
+    def _action_respond(self, agent_id, incident_loc_idx, incident_t_resolution):
         """
         Get agent with `agent_id` to respond to incident
         :param agent_id: agent id
         :param incident_loc_idx: incident location index
+        :param incident_t_resolution: incident resolution time
         :return: reward of action
         """
 
@@ -317,10 +346,13 @@ class PatrolEnv(MultiAgentEnv):
                 agent_travel_status[agent_idx] = 0
                 travel_dest_state[agent_idx] = incident_loc_idx
 
-            #change response state to True so the next agent will not respond to this incident anymore
+            # change response state to True so the next agent will not respond to this incident anymore
             respond_state[0] = 1
-            #update response rate counter
-            self._responded += 1
+            if t + response_time <= incident_t_resolution:
+                # update response rate counter only if responded within resolution time
+                self._responded += 1
+                parent_sector = self._subsector_map['subsector_parent_sector'][agent_dest_loc]
+                self._responded_sectors[parent_sector]['responded'] += 1
 
         self._state.update_state(agent_arrival_time=arrival_time_state, schedule=schedule_state,
                                  agent_travel_status=agent_travel_status, agent_travel_dest=travel_dest_state,
@@ -332,8 +364,10 @@ class PatrolEnv(MultiAgentEnv):
 
         if self._reward_policy == 'end_of_episode':
             self._response_utility += response_utility_fn(response_time)
+            # len(self._scenarios)
             reward = OMEGA * response_utility_fn(response_time) / len(self._incidents.keys())
         elif self._reward_policy == 'stepwise':
+            # len(self._scenarios)
             reward = OMEGA * response_utility_fn(response_time) / len(self._incidents.keys()) + \
                     objective_val_after - obj_val_before - THETA * penalty_val
             #alternative reward formulation
