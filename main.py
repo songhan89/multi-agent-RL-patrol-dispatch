@@ -354,14 +354,6 @@ def main():
                                'benchmark': training_benchmark
                                },  # config to pass to env class
                 "multiagent": get_policy(args.policy, agents_map, obs_space, action_space),
-                # "multiagent": {
-                #     "policies_to_train": ["learned"],
-                #     "policies": {
-                #         "learned": PolicySpec(observation_space=obs_space,
-                #                               action_space=action_space)
-                #     },
-                #     "policy_mapping_fn": policy_mapping_fn
-                # },
                 "preprocessor_pref": "rllib",
                 "gamma": 1.0,
                 "lr": args.learning_rate, #0.0001

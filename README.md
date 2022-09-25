@@ -22,8 +22,8 @@ How should we create the environment ?
 
 #### Action Space
 * When N sector is small, it makes more sense to let action = |N| sectors, this helps to avoid any constraint imposed 
-by dispatch rules
-* We may need to explore dispatch rules benefit vs `free learning` approach
+by dispatch rules [will not do]
+* We may need to explore dispatch rules benefit vs `free learning` approach [will not do]
 
 20 Aug - 
 * Fix the reward . Currently it learns towards lower reward [done]
@@ -33,7 +33,7 @@ by dispatch rules
 28 Aug
 Learning:
 * It seems that the reward structure is better when it is set to zero at every step, and return the state reward
-  at the end of the episode
+  at the end of the episode [done]
 
 High priority
 * Clean up training code - standardise training iteration and episode [Done]
@@ -49,7 +49,8 @@ Low priority
 * Understand the NN architecture size
 
 18 Sep
-* We found that the action choice - travel to nearest patrol area is causing suboptimal optimization, this action should be removed
-* Bug found with `least_disruption_action` whereby the heap queue was not implemented correctly
+* We found that the action choice - travel to nearest patrol area is causing suboptimal optimization, this action should be removed [done]
+* Bug found with `least_disruption_action` whereby the heap queue was not implemented correctly [done]
 
-
+25 Sep
+* Add additional metric to return response rate per sector

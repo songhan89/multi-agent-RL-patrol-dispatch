@@ -63,28 +63,30 @@ EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 1000
 #weight for hamming distance penalty
-THETA = 0.5 #0.5 is ok
+THETA = 0.5 #0.5 is ok #1
 #weight for respond reward
-OMEGA = 10 #10, 2 #100 worked for EFL
+OMEGA = 2 #10, 2 #100 worked for EFL #1
 #penalty for invalid action
 PHI = 0
 
 DISPATCH_ACTIONS = {
         'respond': 0, #respond to the incident
         'continue': 1, #continue current action
-        'nearest_old_job': 2, #patrol the next nearest location currently being patrolled
-        'nearest_new_job': 3, #patrol the next nearest location that is not being patrolled
-        'least_disruption': 4, #patrol the next nearest location that results in least disruption from initials schedule
-        'best_old_job': 5, #patrol the next best location currently being patrolled
-        'best_new_job': 6 #patrol the next best location that was previously patrolled
+        'least_disruption': 2, #patrol the next nearest location that results in least disruption from initials schedule
+        'best_old_job': 3, #patrol the next best location currently being patrolled
+        'best_new_job': 4 #patrol the next best location that was previously patrolled
 }
-NUM_DISPATCH_ACTIONS = len(DISPATCH_ACTIONS)
 
-# Number of dispatch rules in action space at timestep t
-# 1. Let available nearest sub-agent respond to the incident
-# 2. Let available sub-agent respond to the incident in greedy manner
-# 3. All available agent continue task of t-1 for time step t
-# 4. Let all available agent take nearest new job
-# 5. Let all available agent take nearest old job
-# 6. Let all available agent take best old job
-# 7. Let all available agent take best new job
+# DISPATCH_ACTIONS = {
+#         'respond': 0, #respond to the incident
+#         'continue': 1, #continue current action
+#         'nearest_old_job': 2, #patrol the next nearest location currently being patrolled
+#         'nearest_new_job': 3, #patrol the next nearest location that is not being patrolled
+#         'least_disruption': 4, #patrol the next nearest location that results in least disruption from initials schedule
+#         'best_old_job': 5, #patrol the next best location currently being patrolled
+#         'best_new_job': 6 #patrol the next best location that was previously patrolled
+# }
+
+NUM_DISPATCH_ACTIONS = len(DISPATCH_ACTIONS)
+MAX_NUM_DISPATCH_ACTIONS = 7
+

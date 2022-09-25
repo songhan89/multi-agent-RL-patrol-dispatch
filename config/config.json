@@ -7,9 +7,9 @@
     },
     "EpsilonGreedy": {
       "type": "EpsilonGreedy",
-     "initial_epsilon": 0.1,
+     "initial_epsilon": 0.6,
      "final_epsilon": 0.01,
-     "epsilon_timesteps": 100
+     "epsilon_timesteps": 3000
     }
   },
   "model": {
