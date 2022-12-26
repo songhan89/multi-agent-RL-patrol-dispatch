@@ -32,7 +32,7 @@ by dispatch rules [will not do]
 
 28 Aug
 Learning:
-* It seems that the reward structure is better when it is set to zero at every step, and return the state reward
+* It seems that the reward structure is better when it is set to zero at every step, and return the state reward [done]
   at the end of the episode [done]
 
 High priority
@@ -54,3 +54,7 @@ Low priority
 
 25 Sep
 * Add additional metric to return response rate per sector [done]
+
+23 Dec
+* Start writing draft for LNCS paper
+* Get first draft out ready for review by 27 Dec

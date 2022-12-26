@@ -158,14 +158,15 @@ def main():
     parser.add_argument("--encoding_size", default=5, type=int)
     parser.add_argument("--checkpoint", default='./checkpoint/')
     parser.add_argument("--result", default='./result/')
-    parser.add_argument("--reward_policy", default='stepwise', choices=['stepwise', 'end_of_episode'], type=str)
+    parser.add_argument("--reward_policy", default='end_of_episode',
+                        choices=['stepwise', 'end_of_episode'], type=str)
     parser.add_argument("--num_gpus", default=0, type=int)
     parser.add_argument("--num_envs_per_worker", default=1, type=int)
     parser.add_argument("--num_workers", default=3, type=int)
     parser.add_argument("--verbose", default=1, type=int)
     parser.add_argument("--resume", default=False, type=eval, choices=[True, False])
     parser.add_argument("--exploration", default='StochasticSampling', type=str,
-                        choices=['StochasticSampling', 'EpsilonGreedy'])
+                        choices=['StochasticSampling', 'EpsilonGreedy', 'Greedy'])
     parser.add_argument("--benchmark",  default=False, type=eval, choices=[True, False])
     parser.add_argument("--num_scenario", default=500, type=int)
     parser.add_argument("--learning_rate", default=0.0001, type=float)

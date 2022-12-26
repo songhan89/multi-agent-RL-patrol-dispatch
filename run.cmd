@@ -1,3 +1,4 @@
-python main.py --sectors EFL --model APPO --verbose 1 --num_workers 3 --reward_policy end_of_episode --max_iter 1000 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy --nn_network 128x128_relu_attention
-python main.py --sectors EFL --model APPO --verbose 1 --num_workers 5 --reward_policy end_of_episode --max_iter 1000 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy
-python main.py --sectors EFL --model A3C --verbose 1 --num_workers 5 --reward_policy end_of_episode --max_iter 1000 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy
+python main.py --sectors EFL --model APPO --verbose 1 --num_workers 5 --reward_policy stepwise --max_iter 1000 --resume False --benchmark True --num_scenario 500 --policy multi --exploration Greedy
+::python main.py --sectors EFL --model APPO --verbose 1 --num_workers 3 --reward_policy end_of_episode --max_iter 1000 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy --nn_network 128x128_relu_attention
+::python main.py --sectors EFL --model APPO --verbose 1 --num_workers 5 --reward_policy end_of_episode --max_iter 100 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy
+::python main.py --sectors EFL --model A3C --verbose 1 --num_workers 5 --reward_policy end_of_episode --max_iter 100 --resume False --benchmark True --num_scenario 500 --policy multi --exploration EpsilonGreedy

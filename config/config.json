@@ -10,6 +10,12 @@
      "initial_epsilon": 0.6,
      "final_epsilon": 0.01,
      "epsilon_timesteps": 3000
+    },
+    "Greedy": {
+      "type": "EpsilonGreedy",
+     "initial_epsilon": 0.0,
+     "final_epsilon": 0.0,
+     "epsilon_timesteps": 1
     }
   },
   "model": {
