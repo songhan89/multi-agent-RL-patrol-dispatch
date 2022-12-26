@@ -20,7 +20,7 @@ from ray.rllib.algorithms.callbacks import DefaultCallbacks
 from envs.dynamic_patrol import PatrolEnv
 from util.ScheduleUtil import get_global_Q_j
 from data.ScenarioGenerator import generate_scenario
-from constants.Settings import NUM_DISPATCH_ACTIONS, T
+from constants.Settings import NUM_DISPATCH_ACTIONS, T, MAX_HAMMING_DISTANCE
 from gym.spaces import Box, Tuple, Discrete, MultiDiscrete
 from ray.rllib.env import BaseEnv
 from ray.rllib.evaluation import Episode, RolloutWorker
@@ -172,6 +172,7 @@ def main():
     parser.add_argument("--learning_rate", default=0.0001, type=float)
     parser.add_argument("--policy", default='single', choices=['single', 'multi'], type=str)
     parser.add_argument("--nn_network", default='default', choices=['default', '128x128_relu_attention'], type=str)
+    parser.add_argument("--theta_step", default=0.25, type=float)
 
     args = parser.parse_args()
 
@@ -297,7 +298,7 @@ def main():
 
     #set experiment name - for resume to reuse checkpoint
     experiment_name = f"{args.sectors}_{args.model}_{args.max_iter}_{args.poisson_mean}_{args.encoding_size}" \
-                      f"_{args.num_scenario}_{args.exploration}_{args.policy}_{args.nn_network}"
+                      f"_{args.num_scenario}_{args.theta_step}_{args.exploration}_{args.policy}_{args.nn_network}"
 
     logger.info ("----------------------------------------")
     logger.info ("Starting Rlib training")
@@ -367,7 +368,8 @@ def main():
                                'Q_j': Q_j,
                                'reward_policy': args.reward_policy,
                                'benchmark': training_benchmark,
-                               'sectors_info': sectors_info
+                               'sectors_info': sectors_info,
+                               'theta_step': args.theta_step
                                },  # config to pass to env class
                 "multiagent": get_policy(args.policy, agents_map, obs_space, action_space),
                 "preprocessor_pref": "rllib",

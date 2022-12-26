@@ -62,6 +62,8 @@ SEED = 1
 EPS_START = 0.9
 EPS_END = 0.05
 EPS_DECAY = 1000
+#max hamming distance soft constraint
+MAX_HAMMING_DISTANCE = 0.4
 #weight for hamming distance penalty
 THETA = 0.5 #0.5 is ok #1
 #weight for respond reward

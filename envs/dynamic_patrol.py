@@ -4,7 +4,7 @@ import random
 import heapq as hq
 from collections import OrderedDict
 from copy import deepcopy
-from constants.Settings import NUM_DISPATCH_ACTIONS, MAX_NUM_DISPATCH_ACTIONS
+from constants.Settings import NUM_DISPATCH_ACTIONS, MAX_NUM_DISPATCH_ACTIONS, MAX_HAMMING_DISTANCE
 from ray.rllib.env.multi_agent_env import MultiAgentEnv
 from ray.rllib.env.env_context import EnvContext
 from utils.helper import *
@@ -32,6 +32,8 @@ class PatrolEnv(MultiAgentEnv):
         self._agents_map = config['agents_map']
         #choice of reward policy
         self._reward_policy = config['reward_policy']
+        #param for hamming distance penalty step func, only for `end_of_episode` reward
+        self._theta_step = config['theta_step']
         #list of initial schedules
         self._initial_schedules = config['initial_schedules']
         self._sectors = list(self._initial_schedules.keys())
@@ -277,6 +279,9 @@ class PatrolEnv(MultiAgentEnv):
             if self._reward_policy == 'end_of_episode':
                 for agent_id in self._agent_ids:
                     rew[agent_id] = obj_val - THETA * hamming_dist
+                    #step function to further penalise the reward if it exceeds soft-constraint threshold
+                    if hamming_dist > MAX_HAMMING_DISTANCE:
+                        rew[agent_id] -= self._theta_step * hamming_dist
 
             info[agent_id] = {
                 'hamming_dist': hamming_dist,
