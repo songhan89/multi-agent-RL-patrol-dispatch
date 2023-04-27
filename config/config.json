@@ -1,0 +1,35 @@
+{
+  "travel_matrix_fpath": "./data/RawData/travel_time_matrix.pkl",
+  "exploration_config": {
+    "StochasticSampling": {
+      "type": "StochasticSampling",
+      "random_timesteps": 0
+    },
+    "EpsilonGreedy": {
+      "type": "EpsilonGreedy",
+     "initial_epsilon": 0.6,
+     "final_epsilon": 0.01,
+     "epsilon_timesteps": 3000
+    },
+    "Greedy": {
+      "type": "EpsilonGreedy",
+     "initial_epsilon": 0.0,
+     "final_epsilon": 0.0,
+     "epsilon_timesteps": 1
+    }
+  },
+  "model": {
+    "default": {
+      "conv_activation": "relu"
+    },
+    "128x128_relu_attention": {
+      "fcnet_hiddens": [128, 128],
+      "fcnet_activation": "relu",
+      "conv_activation": "relu",
+      "use_attention": 1
+    }
+  }
+}
+
+
+
